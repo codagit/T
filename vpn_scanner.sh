@@ -43,7 +43,7 @@ scan_trap_off(){ trap - SIGINT; stop_scan=false; }
 scan_vpnjantit_country(){
   local country="$1"
   local domains
-  domains=$(curl -s --max-time 10 "https://www.vpnjantit.com/free-ssh-$country" \
+  domains=$(curl -s -L -A "Mozilla/5.0" --max-time 10 "https://www.vpnjantit.com/free-ssh-server-$country" \
     | grep -oE '[a-z0-9.-]+\\.vpnjantit\\.com' | grep -v 'www\\.' | sort -u)
 
   echo -e "${C_COUNTRY}${country//-/ }:${C_RESET}"
@@ -69,6 +69,7 @@ scan_vpnjantit(){
 
   : > "$output_file"
   : > "$temp_domains"
+  : > "$ip_file"
   echo -e "${C_INFO}Starting VPNJantit scan (${#countries[@]} locations)...${C_RESET}"
   scan_trap_on
   
@@ -85,10 +86,11 @@ scan_vpnjantit(){
 scan_opentunnel(){
   : > "$output_file"
   : > "$temp_domains"
+  : > "$ip_file"
   echo -e "${C_INFO}Starting OpenTunnel scan...${C_RESET}"
   scan_trap_on
   local domains
-  domains=$(curl -s --max-time 15 "https://opentunnel.net/ssh/" \
+  domains=$(curl -s -L -A "Mozilla/5.0" --max-time 15 "https://opentunnel.net/ssh/" \
     | grep -oE '[a-z0-9.-]+\\.optnl\\.com' \
     | grep -v '^dns\\.' \
     | sort -u)
@@ -190,15 +192,15 @@ post_scan_menu(){
     echo -e "\n${C_HEADER}-------------------- NEXT STEP ---------------------${C_RESET}"
     echo -e "${C_COUNTRY}1)${C_RESET} Resolve collected domains to IPs"
     echo -e "${C_COUNTRY}2)${C_RESET} Ping resolved IPs"
-    echo -e "${C_INFO}M)${C_RESET} Back to Main Menu"
-    echo -e "${C_FAIL}Q)${C_RESET} Quit"
+    echo -e "${C_INFO}3)${C_RESET} Back to Main Menu"
+    echo -e "${C_FAIL}4)${C_RESET} Quit"
     echo -e "${C_HEADER}----------------------------------------------------${C_RESET}"
-    read -rp "Choose an option [1/2/M/Q]: " step
-    case "${step^^}" in
+    read -rp "Choose an option [1-4]: " step
+    case "$step" in
       1) resolve_domains ;;
       2) ping_all ;;
-      M) return ;;
-      Q) echo "Goodbye"; exit 0 ;;
+      3) return ;;
+      4) echo "Goodbye"; exit 0 ;;
       *) echo -e "${C_FAIL}Invalid option!${C_RESET}" ;;
     esac
   done
