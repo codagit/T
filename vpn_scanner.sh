@@ -39,12 +39,12 @@ stop_scan=false
 scan_trap_on(){ trap 'stop_scan=true; echo -e "\n${C_FAIL}Scan interrupted by user!${C_RESET}"' SIGINT; }
 scan_trap_off(){ trap - SIGINT; stop_scan=false; }
 
-# ===== vpnjantit scan (parallel per-country) =====
+# ===== vpnjantit scan =====
 scan_vpnjantit_country(){
   local country="$1"
   local domains
   domains=$(curl -s -L -A "Mozilla/5.0" --max-time 10 "https://www.vpnjantit.com/free-ssh-server-$country" \
-    | grep -oE '[a-z0-9.-]+\\.vpnjantit\\.com' | grep -v 'www\\.' | sort -u)
+    | grep -oE '[a-z0-9.-]+\.vpnjantit\.com' | grep -v 'www\.' | sort -u)
 
   echo -e "${C_COUNTRY}${country//-/ }:${C_RESET}"
   if [ -z "$domains" ]; then
@@ -91,8 +91,8 @@ scan_opentunnel(){
   scan_trap_on
   local domains
   domains=$(curl -s -L -A "Mozilla/5.0" --max-time 15 "https://opentunnel.net/ssh/" \
-    | grep -oE '[a-z0-9.-]+\\.optnl\\.com' \
-    | grep -v '^dns\\.' \
+    | grep -oE '[a-z0-9.-]+\.optnl\.com' \
+    | grep -v '^dns\.' \
     | sort -u)
 
   echo "OpenTunnel:" >> "$output_file"
@@ -171,7 +171,7 @@ ping_all(){
 # ===== Menus =====
 main_menu(){
   while true; do
-    clear
+    printf "\033c"  # Clear screen using ANSI escape sequence
     echo -e "${C_HEADER}==================== MAIN MENU ====================${C_RESET}"
     echo -e "${C_COUNTRY}1)${C_RESET} Scan from ${C_INFO}vpnjantit.com${C_RESET}"
     echo -e "${C_COUNTRY}2)${C_RESET} Scan from ${C_INFO}opentunnel.net${C_RESET} (filters ${C_FAIL}dns.*${C_RESET})"
@@ -207,8 +207,8 @@ post_scan_menu(){
 }
 
 # ===== Initialization =====
-if ! command -v curl &> /dev/null; then
-  echo -e "${C_WARN}curl not found - installing dependencies...${C_RESET}"
+if ! command -v curl &> /dev/null || ! command -v grep &> /dev/null; then
+  echo -e "${C_WARN}Required tools missing - installing dependencies...${C_RESET}"
   install_dependencies
 fi
 
