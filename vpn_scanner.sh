@@ -24,14 +24,14 @@ print_header(){
   echo "$(printf '=%.0s' $(seq 1 $((COL_DOMAIN + COL_IP + COL_PING + 10))))"
 }
 
-pause_enter(){ read -rp $'Press Enter to continue...\n'; }
+pause_enter(){ read -rp "Press Enter to continue..."; }
 
 # ===== Dependencies (Termux) =====
 install_dependencies(){
   echo -e "${C_INFO}Updating & installing dependencies...${C_RESET}"
   pkg update -y && pkg upgrade -y
-  pkg install curl git coreutils busybox grep dos2unix -y
-  echo -e "${C_INFO}Dependencies finished.${C_RESET}"
+  pkg install curl grep -y
+  echo -e "${C_INFO}Dependencies installed.${C_RESET}"
 }
 
 # ===== CTRL+C handling for scans =====
@@ -54,7 +54,7 @@ scan_vpnjantit_country(){
     echo "$domains" | sed 's/^/  /' >> "$output_file"
     echo "$domains" >> "$temp_domains"
   fi
-  \$stop_scan && exit 0
+  $stop_scan && return 1
 }
 
 scan_vpnjantit(){
@@ -71,21 +71,24 @@ scan_vpnjantit(){
   : > "$temp_domains"
   echo -e "${C_INFO}Starting VPNJantit scan (${#countries[@]} locations)...${C_RESET}"
   scan_trap_on
-  export -f scan_vpnjantit_country
-  export output_file temp_domains C_COUNTRY C_RESET stop_scan
-  printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_vpnjantit_country "$0"'
+  
+  for country in "${countries[@]}"; do
+    $stop_scan && break
+    scan_vpnjantit_country "$country"
+  done
+  
   scan_trap_off
   echo -e "\nScan completed at $(date +'%F %T')"
 }
 
-# ===== opentunnel scan (single page, filter dns.*) =====
+# ===== opentunnel scan =====
 scan_opentunnel(){
   : > "$output_file"
   : > "$temp_domains"
   echo -e "${C_INFO}Starting OpenTunnel scan...${C_RESET}"
   scan_trap_on
   local domains
-  domains=$(curl -s --max-time 15 "https://opentunnel.net/ssh/#gsc.tab=0" \
+  domains=$(curl -s --max-time 15 "https://opentunnel.net/ssh/" \
     | grep -oE '[a-z0-9.-]+\\.optnl\\.com' \
     | grep -v '^dns\\.' \
     | sort -u)
@@ -101,12 +104,13 @@ scan_opentunnel(){
   echo -e "\nScan completed at $(date +'%F %T')"
 }
 
-# ===== Resolve domains to IPs (parallel) =====
+# ===== Resolve domains to IPs =====
 resolve_domains(){
-  if [ ! -s "$temp_domains" ]; then
-    echo -e "${C_WARN}No domains collected yet. Run a scan first.${C_RESET}"
+  [ ! -s "$temp_domains" ] && {
+    echo -e "${C_WARN}No domains collected. Run a scan first.${C_RESET}"
     return 1
-  fi
+  }
+  
   : > "$ip_file"
   echo -e "\n${C_INFO}Resolving domains using Google's DNS API...${C_RESET}"
   print_header
@@ -115,7 +119,8 @@ resolve_domains(){
     local domain="$1"
     local response ip
     response=$(curl -s "https://dns.google/resolve?name=$domain&type=A")
-    ip=$(echo "$response" | grep -oE '"data":"[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"' | head -1 | cut -d '"' -f4)
+    ip=$(echo "$response" | grep -oE '"data":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d '"' -f4)
+    
     if [ -n "$ip" ]; then
       echo "$domain $ip" >> "$ip_file"
       printf "%-${COL_DOMAIN}s${SEPARATOR}%-${COL_IP}s${SEPARATOR}%-${COL_PING}s\n" "$domain" "$ip" "N/A"
@@ -123,3 +128,86 @@ resolve_domains(){
       printf "%-${COL_DOMAIN}s${SEPARATOR}%-${COL_IP}s${SEPARATOR}%-${COL_PING}s\n" "$domain" "Resolution failed" "N/A"
     fi
   }
+
+  while read -r domain; do
+    resolve_one "$domain"
+  done < <(sort -u "$temp_domains")
+}
+
+# ===== Ping all IPs =====
+ping_all(){
+  [ ! -s "$ip_file" ] && {
+    echo -e "${C_WARN}No IPs to ping. Resolve first.${C_RESET}"
+    return 1
+  }
+  
+  echo -e "\n${C_INFO}Pinging IP addresses (2 packets each)...${C_RESET}"
+  print_header
+
+  ping_ip(){
+    local domain="$1"
+    local ip="$2"
+    local ping_result avg_ping
+    
+    if ping_result=$(ping -c 2 -W 2 "$ip" 2>&1); then
+      avg_ping=$(echo "$ping_result" | awk -F'/' 'END {gsub(/[^0-9.]/, "", $5); print $5}')
+      printf "%-${COL_DOMAIN}s${SEPARATOR}%-${COL_IP}s${SEPARATOR}${C_WARN}%${COL_PING}s${C_RESET}\n" \
+             "$domain" "$ip" "${avg_ping}ms"
+    else
+      printf "%-${COL_DOMAIN}s${SEPARATOR}%-${COL_IP}s${SEPARATOR}${C_FAIL}%${COL_PING}s${C_RESET}\n" \
+             "$domain" "$ip" "Timeout"
+    fi
+  }
+
+  while read -r domain ip; do
+    ping_ip "$domain" "$ip"
+  done < "$ip_file"
+  
+  echo -e "\nPing tests completed at $(date +'%F %T')"
+}
+
+# ===== Menus =====
+main_menu(){
+  while true; do
+    clear
+    echo -e "${C_HEADER}==================== MAIN MENU ====================${C_RESET}"
+    echo -e "${C_COUNTRY}1)${C_RESET} Scan from ${C_INFO}vpnjantit.com${C_RESET}"
+    echo -e "${C_COUNTRY}2)${C_RESET} Scan from ${C_INFO}opentunnel.net${C_RESET} (filters ${C_FAIL}dns.*${C_RESET})"
+    echo -e "${C_FAIL}3) Exit${C_RESET}"
+    echo -e "${C_HEADER}====================================================${C_RESET}"
+    read -rp "Choose an option [1-3]: " choice
+    case "$choice" in
+      1) scan_vpnjantit; post_scan_menu ;;
+      2) scan_opentunnel; post_scan_menu ;;
+      3) echo "Goodbye"; exit 0 ;;
+      *) echo -e "${C_FAIL}Invalid choice!${C_RESET}"; pause_enter ;;
+    esac
+  done
+}
+
+post_scan_menu(){
+  while true; do
+    echo -e "\n${C_HEADER}-------------------- NEXT STEP ---------------------${C_RESET}"
+    echo -e "${C_COUNTRY}1)${C_RESET} Resolve collected domains to IPs"
+    echo -e "${C_COUNTRY}2)${C_RESET} Ping resolved IPs"
+    echo -e "${C_INFO}M)${C_RESET} Back to Main Menu"
+    echo -e "${C_FAIL}Q)${C_RESET} Quit"
+    echo -e "${C_HEADER}----------------------------------------------------${C_RESET}"
+    read -rp "Choose an option [1/2/M/Q]: " step
+    case "${step^^}" in
+      1) resolve_domains ;;
+      2) ping_all ;;
+      M) return ;;
+      Q) echo "Goodbye"; exit 0 ;;
+      *) echo -e "${C_FAIL}Invalid option!${C_RESET}" ;;
+    esac
+  done
+}
+
+# ===== Initialization =====
+if ! command -v curl &> /dev/null; then
+  echo -e "${C_WARN}curl not found - installing dependencies...${C_RESET}"
+  install_dependencies
+fi
+
+main_menu
