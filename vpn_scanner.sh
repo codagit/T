@@ -14,7 +14,7 @@ C_FAIL="\033[1;31m"
 # ────────────────────────[ Files ]────────────────────────────────────────────
 output_file="vpn_domains.txt"
 ip_file="vpn_ips.txt"
-temp_domains=".temp_domains.txt"
+temp_domains="temp_domains.txt"  # Changed to non-hidden file to avoid issues
 
 # ────────────────────────[ Functions ]────────────────────────────────────────
 print_header() {
@@ -83,18 +83,20 @@ while true; do
     echo "4) Exit"
     read -p "Enter choice [1-4]: " site_choice
 
+    # Initialize files only if starting a new scan
+    if [[ "$site_choice" == "1" || "$site_choice" == "2" ]]; then
+        > "$output_file"
+        > "$temp_domains"
+    fi
+
     case $site_choice in
         1)
-            > "$output_file"
-            > "$temp_domains"
             echo "Starting VPNJantit scan..."
             export -f scan_vpnjantit
             export output_file temp_domains C_COUNTRY C_RESET C_HEADER C_SUCCESS C_FAIL stop_scan
             printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_vpnjantit "$0"'
             ;;
         2)
-            > "$output_file"
-            > "$temp_domains"
             echo "Starting OpenTunnel scan..."
             scan_opentunnel
             ;;
