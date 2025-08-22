@@ -37,30 +37,36 @@ trap 'echo -e "\n${C_FAIL}Scan interrupted by user!${C_RESET}"; stop_scan=true' 
 # ────────────────────────[ Scan Functions ]───────────────────────────────────
 scan_vpnjantit() {
     local country="$1"
-    domains=$(curl -s --max-time 10 "https://www.vpnjantit.com/free-ssh-$country" \
+    echo -e "${C_HEADER}Scanning VPNJantit for $country...${C_RESET}"
+    domains=$(curl -s --max-time 10 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://www.vpnjantit.com/free-ssh-$country" \
         | grep -oE '[a-z0-9]+\.vpnjantit\.com' \
         | grep -v 'www\.' \
         | sort -u)
 
     echo -e "${C_COUNTRY}${country//-/ }:${C_RESET}" >> "$output_file"
     if [ -z "$domains" ]; then
-        echo "  No servers" >> "$output_file"
+        echo "  No servers found for $country" >> "$output_file"
+        echo -e "${C_FAIL}No domains collected for $country${C_RESET}"
     else
+        echo -e "${C_SUCCESS}Domains found for $country:${C_RESET} $domains"
         echo "$domains" | tee -a "$output_file" >> "$temp_domains"
     fi
     $stop_scan && exit 0
 }
 
 scan_opentunnel() {
-    domains=$(curl -s --max-time 15 "https://opentunnel.net/ssh/" \
+    echo -e "${C_HEADER}Scanning OpenTunnel...${C_RESET}"
+    domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://opentunnel.net/ssh/" \
         | grep -oE '[a-z0-9.-]+\.optnl\.com' \
         | grep -v '^dns\.' \
         | sort -u)
 
     echo -e "${C_COUNTRY}OpenTunnel:${C_RESET}" >> "$output_file"
     if [ -z "$domains" ]; then
-        echo "  No servers" >> "$output_file"
+        echo "  No servers found for OpenTunnel" >> "$output_file"
+        echo -e "${C_FAIL}No domains collected for OpenTunnel${C_RESET}"
     else
+        echo -e "${C_SUCCESS}Domains found for OpenTunnel:${C_RESET} $domains"
         echo "$domains" | tee -a "$output_file" >> "$temp_domains"
     fi
     $stop_scan && exit 0
@@ -81,7 +87,7 @@ while true; do
             > "$temp_domains"
             echo "Starting VPNJantit scan..."
             export -f scan_vpnjantit
-            export output_file temp_domains C_COUNTRY C_RESET stop_scan
+            export output_file temp_domains C_COUNTRY C_RESET C_HEADER C_SUCCESS C_FAIL stop_scan
             printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_vpnjantit "$0"'
             ;;
         2)
@@ -96,6 +102,7 @@ while true; do
             ;;
         4)
             echo "Exiting script."
+            rm -f "$temp_domains"
             exit 0
             ;;
         *)
@@ -104,19 +111,23 @@ while true; do
             ;;
     esac
 
-    $stop_scan && echo "Proceeding with collected domains so far..."
+    if $stop_scan; then
+        echo "Proceeding with collected domains so far..."
+    fi
     echo -e "\nScan completed at $(date +'%F %T')"
 
     # ────────────────────────[ Resolve Domains to IPs ]────────────────────────
     if [ ! -s "$temp_domains" ]; then
-        echo "⚠️  No domains collected. Please scan again from main menu."
+        echo -e "${C_FAIL}⚠️  No domains collected. Please scan again from main menu.${C_RESET}"
         continue
+    else
+        echo -e "${C_SUCCESS}Domains collected successfully. Total domains: $(wc -l < "$temp_domains")${C_RESET}"
     fi
 
     read -p "Do you want to resolve domains to IP addresses? (y=Yes / 3=Menu / 4=Exit): " -n 1 -r
     echo
     [[ $REPLY == "3" ]] && continue
-    [[ $REPLY == "4" ]] && exit 0
+    [[ $REPLY == "4" ]] && rm -f "$temp_domains" && exit 0
     [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Skipping DNS resolution" && continue
 
     echo -e "\nResolving domains using Google's DNS API..."
@@ -145,7 +156,7 @@ while true; do
             read -p "Do you want to ping all resolved IPs? (y=Yes / 3=Menu / 4=Exit): " -n 1 -r
             echo
             [[ $REPLY == "3" ]] && break 2
-            [[ $REPLY == "4" ]] && exit 0
+            [[ $REPLY == "4" ]] && rm -f "$temp_domains" && exit 0
             [[ ! $REPLY =~ ^[Yy]$ ]] && break
             echo -e "\nPinging IP addresses (2 packets each)..."
             print_header
