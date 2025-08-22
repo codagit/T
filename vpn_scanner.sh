@@ -49,7 +49,8 @@ scan_vpnjantit() {
         echo -e "${C_FAIL}No domains collected for $country${C_RESET}"
     else
         echo -e "${C_SUCCESS}Domains found for $country:${C_RESET} $domains"
-        echo "$domains" | tee -a "$output_file" >> "$temp_domains"
+        echo "$domains" >> "$temp_domains"
+        echo "$domains" >> "$output_file"
     fi
     $stop_scan && exit 0
 }
@@ -67,7 +68,8 @@ scan_opentunnel() {
         echo -e "${C_FAIL}No domains collected for OpenTunnel${C_RESET}"
     else
         echo -e "${C_SUCCESS}Domains found for OpenTunnel:${C_RESET} $domains"
-        echo "$domains" | tee -a "$output_file" >> "$temp_domains"
+        echo "$domains" >> "$temp_domains"
+        echo "$domains" >> "$output_file"
     fi
     $stop_scan && exit 0
 }
@@ -116,12 +118,16 @@ while true; do
     fi
     echo -e "\nScan completed at $(date +'%F %T')"
 
-    # ────────────────────────[ Resolve Domains to IPs ]────────────────────────
-    if [ ! -s "$temp_domains" ]; then
+    # ────────────────────────[ Check temp_domains file ]──────────────────────
+    if [ ! -f "$temp_domains" ] || [ ! -s "$temp_domains" ]; then
         echo -e "${C_FAIL}⚠️  No domains collected. Please scan again from main menu.${C_RESET}"
+        echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
+        cat "$temp_domains" 2>/dev/null || echo "File does not exist or is empty"
         continue
     else
         echo -e "${C_SUCCESS}Domains collected successfully. Total domains: $(wc -l < "$temp_domains")${C_RESET}"
+        echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
+        cat "$temp_domains"
     fi
 
     read -p "Do you want to resolve domains to IP addresses? (y=Yes / 3=Menu / 4=Exit): " -n 1 -r
