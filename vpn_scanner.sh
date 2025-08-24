@@ -1,4 +1,4 @@
-#!/bin/bash
+ #!/bin/bash
 
 # ────────────────────────[ Colors and Table Settings ]────────────────────────
 COL_DOMAIN=30
@@ -14,7 +14,7 @@ C_FAIL="\033[1;31m"
 # ────────────────────────[ Files ]────────────────────────────────────────────
 output_file="vpn_domains.txt"
 ip_file="vpn_ips.txt"
-temp_domains="temp_domains.txt"  # Changed to non-hidden file to avoid issues
+temp_domains="temp_domains.txt"
 
 # ────────────────────────[ Functions ]────────────────────────────────────────
 print_header() {
@@ -22,10 +22,39 @@ print_header() {
     echo "$(printf '=%.0s' $(seq 1 $((COL_DOMAIN + COL_IP + COL_PING + 10))))"
 }
 
-# ────────────────────────[ Dependency Check ]─────────────────────────────────
-echo -e "${C_HEADER}Checking and installing dependencies...${C_RESET}"
-pkg update -y && pkg upgrade -y
-pkg install curl git coreutils busybox grep dos2unix -y
+# ────────────────────────[ Dependency Check and Update ]──────────────────────
+check_and_update_dependencies() {
+    echo -e "${C_HEADER}Checking dependencies...${C_RESET}"
+    local packages=("curl" "git" "coreutils" "busybox" "grep" "dos2unix")
+    local missing_packages=()
+
+    # Check if each package is installed
+    for pkg in "${packages[@]}"; do
+        if ! command -v "$pkg" &>/dev/null; then
+            missing_packages+=("$pkg")
+        fi
+    done
+
+    # Install missing packages
+    if [ ${#missing_packages[@]} -gt 0 ]; then
+        echo -e "${C_FAIL}Missing packages: ${missing_packages[*]}${C_RESET}"
+        echo -e "${C_HEADER}Installing missing packages...${C_RESET}"
+        pkg install "${missing_packages[@]}" -y || {
+            echo -e "${C_FAIL}Failed to install packages. Please check your internet connection or Termux repository.${C_RESET}"
+            return 1
+        }
+    else
+        echo -e "${C_SUCCESS}All required packages are already installed.${C_RESET}"
+    fi
+
+    # Update package list and upgrade installed packages
+    echo -e "${C_HEADER}Updating package list and upgrading packages...${C_RESET}"
+    pkg update -y && pkg upgrade -y || {
+        echo -e "${C_FAIL}Failed to update packages. Please check your internet connection or Termux repository.${C_RESET}"
+        return 1
+    }
+    echo -e "${C_SUCCESS}Package check and update completed.${C_RESET}"
+}
 
 # ────────────────────────[ Country List for vpnjantit ]───────────────────────
 countries=(argentina australia brazil canada france germany india indonesia japan malaysia netherlands singapore sweden turkey united-kingdom united-states united-arab-emirates vietnam ukraine thailand switzerland spain south-korea south-africa slovakia saudi-arabia russia romania qatar portugal poland philippines pakistan oman moldova mexico luxembourg latvia kuwait kazakhstan italy israel iraq ireland hungary hong-kong greece finland estonia egypt denmark czech-republic chile cambodia bulgaria bangladesh bahrain armenia)
@@ -76,35 +105,39 @@ scan_opentunnel() {
 
 # ────────────────────────[ Main Menu Loop ]────────────────────────────────────
 while true; do
-    echo -e "\nChoose the website to scan domains from:"
-    echo "1) vpnjantit.com"
-    echo "2) opentunnel.net"
-    echo "3) Return to Main Menu"
-    echo "4) Exit"
-    read -p "Enter choice [1-4]: " site_choice
+    echo -e "\nChoose an option:"
+    echo "1) Check and update dependencies"
+    echo "2) Scan vpnjantit.com"
+    echo "3) Scan opentunnel.net"
+    echo "4) Return to Main Menu"
+    echo "5) Exit"
+    read -p "Enter choice [1-5]: " site_choice
 
     # Initialize files only if starting a new scan
-    if [[ "$site_choice" == "1" || "$site_choice" == "2" ]]; then
+    if [[ "$site_choice" == "2" || "$site_choice" == "3" ]]; then
         > "$output_file"
         > "$temp_domains"
     fi
 
     case $site_choice in
         1)
+            check_and_update_dependencies
+            ;;
+        2)
             echo "Starting VPNJantit scan..."
             export -f scan_vpnjantit
             export output_file temp_domains C_COUNTRY C_RESET C_HEADER C_SUCCESS C_FAIL stop_scan
             printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_vpnjantit "$0"'
             ;;
-        2)
+        3)
             echo "Starting OpenTunnel scan..."
             scan_opentunnel
             ;;
-        3)
+        4)
             echo "Returning to main menu..."
             continue
             ;;
-        4)
+        5)
             echo "Exiting script."
             rm -f "$temp_domains"
             exit 0
@@ -118,24 +151,27 @@ while true; do
     if $stop_scan; then
         echo "Proceeding with collected domains so far..."
     fi
-    echo -e "\nScan completed at $(date +'%F %T')"
 
-    # ────────────────────────[ Check temp_domains file ]──────────────────────
-    if [ ! -f "$temp_domains" ] || [ ! -s "$temp_domains" ]; then
-        echo -e "${C_FAIL}⚠️  No domains collected. Please scan again from main menu.${C_RESET}"
-        echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
-        cat "$temp_domains" 2>/dev/null || echo "File does not exist or is empty"
-        continue
-    else
-        echo -e "${C_SUCCESS}Domains collected successfully. Total domains: $(wc -l < "$temp_domains")${C_RESET}"
-        echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
-        cat "$temp_domains"
+    # Skip domain check if only checking dependencies
+    if [[ "$site_choice" != "1" ]]; then
+        echo -e "\nScan completed at $(date +'%F %T')"
+        # ────────────────────────[ Check temp_domains file ]──────────────────────
+        if [ ! -f "$temp_domains" ] || [ ! -s "$temp_domains" ]; then
+            echo -e "${C_FAIL}⚠️  No domains collected. Please scan again from main menu.${C_RESET}"
+            echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
+            cat "$temp_domains" 2>/dev/null || echo "File does not exist or is empty"
+            continue
+        else
+            echo -e "${C_SUCCESS}Domains collected successfully. Total domains: $(wc -l < "$temp_domains")${C_RESET}"
+            echo -e "${C_HEADER}Debug: temp_domains file content:${C_RESET}"
+            cat "$temp_domains"
+        fi
     fi
 
-    read -p "Do you want to resolve domains to IP addresses? (y=Yes / 3=Menu / 4=Exit): " -n 1 -r
+    read -p "Do you want to resolve domains to IP addresses? (y=Yes / 4=Menu / 5=Exit): " -n 1 -r
     echo
-    [[ $REPLY == "3" ]] && continue
-    [[ $REPLY == "4" ]] && rm -f "$temp_domains" && exit 0
+    [[ $REPLY == "4" ]] && continue
+    [[ $REPLY == "5" ]] && rm -f "$temp_domains" && exit 0
     [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Skipping DNS resolution" && continue
 
     echo -e "\nResolving domains using Google's DNS API..."
@@ -161,10 +197,10 @@ while true; do
     # ────────────────────────[ Ping Test ]────────────────────────────────────
     while true; do
         if [ -s "$ip_file" ]; then
-            read -p "Do you want to ping all resolved IPs? (y=Yes / 3=Menu / 4=Exit): " -n 1 -r
+            read -p "Do you want to ping all resolved IPs? (y=Yes / 4=Menu / 5=Exit): " -n 1 -r
             echo
-            [[ $REPLY == "3" ]] && break 2
-            [[ $REPLY == "4" ]] && rm -f "$temp_domains" && exit 0
+            [[ $REPLY == "4" ]] && break 2
+            [[ $REPLY == "5" ]] && rm -f "$temp_domains" && exit 0
             [[ ! $REPLY =~ ^[Yy]$ ]] && break
             echo -e "\nPinging IP addresses (2 packets each)..."
             print_header
