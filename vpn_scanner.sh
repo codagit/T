@@ -110,7 +110,9 @@ scan_sshocean() {
         | grep -oE '[a-z0-9.-]+\.sshocean\.site' | sort -u)
     ssl_domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://sshocean.com/ssh-ssl/$country" \
         | grep -oE '[a-z0-9.-]+\.sshocean\.site' | sort -u)
-    combined_domains=$(echo -e "$ssh_domains\n$ssl_domains" | grep -v '^$' | sort -u)
+    ssl_page2_domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://sshocean.com/ssh-ssl/page-2/$country" \
+        | grep -oE '[a-z0-9.-]+\.sshocean\.site' | sort -u)
+    combined_domains=$(echo -e "$ssh_domains\n$ssl_domains\n$ssl_page2_domains" | grep -v '^$' | sort -u)
 
     echo -e "${C_COUNTRY}${country//-/ }:${C_RESET}" >> "$output_file"
     if [ -z "$combined_domains" ]; then
