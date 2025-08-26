@@ -25,7 +25,7 @@ print_header() {
 # ────────────────────────[ Dependency Check and Update ]──────────────────────
 check_and_update_dependencies() {
     echo -e "${C_HEADER}Checking dependencies...${C_RESET}"
-    local packages=("curl" "git" "coreutils" "busybox" "grep" "dos2unix" "tor")
+    local packages=("curl" "git" "coreutils" "busybox" "grep" "dos2unix")
     local missing_packages=()
 
     # Check if each package is installed
@@ -56,24 +56,7 @@ check_and_update_dependencies() {
     echo -e "${C_SUCCESS}Package check and update completed.${C_RESET}"
 }
 
-# ────────────────────────[ Start Tor if not running ]─────────────────────────
-start_tor() {
-    if ! pgrep -x "tor" > /dev/null; then
-        echo -e "${C_HEADER}Starting Tor service...${C_RESET}"
-        tor &  # Run Tor in background
-        sleep 10  # Wait for Tor to initialize
-        if pgrep -x "tor" > /dev/null; then
-            echo -e "${C_SUCCESS}Tor is running.${C_RESET}"
-        else
-            echo -e "${C_FAIL}Failed to start Tor. Please ensure Tor is installed and try again.${C_RESET}"
-            exit 1
-        fi
-    else
-        echo -e "${C_SUCCESS}Tor is already running.${C_RESET}"
-    fi
-}
-
-# ────────────────────────[ Country List for vpnjantit ]───────────────────────
+# ────────────────────────[ Country List for vpnjantit and sshocean ]──────────
 countries=(argentina australia brazil canada france germany india indonesia japan malaysia netherlands singapore sweden turkey united-kingdom united-states united-arab-emirates vietnam ukraine thailand switzerland spain south-korea south-africa slovakia saudi-arabia russia romania qatar portugal poland philippines pakistan oman moldova mexico luxembourg latvia kuwait kazakhstan italy israel iraq ireland hungary hong-kong greece finland estonia egypt denmark czech-republic chile cambodia bulgaria bangladesh bahrain armenia)
 
 # ────────────────────────[ Stop on CTRL+C ]────────────────────────────────────
@@ -84,7 +67,7 @@ trap 'echo -e "\n${C_FAIL}Scan interrupted by user!${C_RESET}"; stop_scan=true' 
 scan_vpnjantit() {
     local country="$1"
     echo -e "${C_HEADER}Scanning VPNJantit for $country...${C_RESET}"
-    domains=$(curl -s --max-time 10 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --socks5-hostname 127.0.0.1:9050 "https://www.vpnjantit.com/free-ssh-$country" \
+    domains=$(curl -s --max-time 10 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://www.vpnjantit.com/free-ssh-$country" \
         | grep -oE '[a-z0-9]+\.vpnjantit\.com' \
         | grep -v 'www\.' \
         | sort -u)
@@ -103,7 +86,7 @@ scan_vpnjantit() {
 
 scan_opentunnel() {
     echo -e "${C_HEADER}Scanning OpenTunnel...${C_RESET}"
-    domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --socks5-hostname 127.0.0.1:9050 "https://opentunnel.net/ssh/" \
+    domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://opentunnel.net/ssh/" \
         | grep -oE '[a-z0-9.-]+\.optnl\.com' \
         | grep -v '^dns\.' \
         | sort -u)
@@ -120,18 +103,40 @@ scan_opentunnel() {
     $stop_scan && exit 0
 }
 
+scan_sshocean() {
+    local country="$1"
+    echo -e "${C_HEADER}Scanning SSHOcean for $country...${C_RESET}"
+    ssh_domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://sshocean.com/ssh/$country" \
+        | grep -oE '[a-z0-9.-]+\.sshocean\.site' | sort -u)
+    ssl_domains=$(curl -s --max-time 15 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" "https://sshocean.com/ssh-ssl/$country" \
+        | grep -oE '[a-z0-9.-]+\.sshocean\.site' | sort -u)
+    combined_domains=$(echo -e "$ssh_domains\n$ssl_domains" | grep -v '^$' | sort -u)
+
+    echo -e "${C_COUNTRY}${country//-/ }:${C_RESET}" >> "$output_file"
+    if [ -z "$combined_domains" ]; then
+        echo "  No servers found for $country" >> "$output_file"
+        echo -e "${C_FAIL}No domains collected for $country${C_RESET}"
+    else
+        echo -e "${C_SUCCESS}Domains found for $country:${C_RESET} $combined_domains"
+        echo "$combined_domains" >> "$temp_domains"
+        echo "$combined_domains" >> "$output_file"
+    fi
+    $stop_scan && exit 0
+}
+
 # ────────────────────────[ Main Menu Loop ]────────────────────────────────────
 while true; do
     echo -e "\nChoose an option:"
     echo "1) Check and update dependencies"
     echo "2) Scan vpnjantit.com"
     echo "3) Scan opentunnel.net"
-    echo "4) Return to Main Menu"
-    echo "5) Exit"
-    read -p "Enter choice [1-5]: " site_choice
+    echo "4) Scan sshocean.com"
+    echo "5) Return to Main Menu"
+    echo "6) Exit"
+    read -p "Enter choice [1-6]: " site_choice
 
     # Initialize files only if starting a new scan
-    if [[ "$site_choice" == "2" || "$site_choice" == "3" ]]; then
+    if [[ "$site_choice" == "2" || "$site_choice" == "3" || "$site_choice" == "4" ]]; then
         > "$output_file"
         > "$temp_domains"
     fi
@@ -141,22 +146,26 @@ while true; do
             check_and_update_dependencies
             ;;
         2)
-            start_tor
             echo "Starting VPNJantit scan..."
             export -f scan_vpnjantit
             export output_file temp_domains C_COUNTRY C_RESET C_HEADER C_SUCCESS C_FAIL stop_scan
             printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_vpnjantit "$0"'
             ;;
         3)
-            start_tor
             echo "Starting OpenTunnel scan..."
             scan_opentunnel
             ;;
         4)
+            echo "Starting SSHOcean scan..."
+            export -f scan_sshocean
+            export output_file temp_domains C_COUNTRY C_RESET C_HEADER C_SUCCESS C_FAIL stop_scan
+            printf "%s\n" "${countries[@]}" | xargs -n1 -P4 bash -c 'scan_sshocean "$0"'
+            ;;
+        5)
             echo "Returning to main menu..."
             continue
             ;;
-        5)
+        6)
             echo "Exiting script."
             rm -f "$temp_domains"
             exit 0
@@ -187,13 +196,11 @@ while true; do
         fi
     fi
 
-    read -p "Do you want to resolve domains to IP addresses? (y=Yes / 4=Menu / 5=Exit): " -n 1 -r
+    read -p "Do you want to resolve domains to IP addresses? (y=Yes / 5=Menu / 6=Exit): " -n 1 -r
     echo
-    [[ $REPLY == "4" ]] && continue
-    [[ $REPLY == "5" ]] && rm -f "$temp_domains" && exit 0
+    [[ $REPLY == "5" ]] && continue
+    [[ $REPLY == "6" ]] && rm -f "$temp_domains" && exit 0
     [[ ! $REPLY =~ ^[Yy]$ ]] && echo "Skipping DNS resolution" && continue
-
-    start_tor  # Ensure Tor is running for DNS resolution
 
     echo -e "\nResolving domains using Google's DNS API..."
     > "$ip_file"
@@ -201,7 +208,7 @@ while true; do
 
     resolve_domain() {
         local domain="$1"
-        response=$(curl -s --socks5-hostname 127.0.0.1:9050 "https://dns.google/resolve?name=$domain&type=A")
+        response=$(curl -s "https://dns.google/resolve?name=$domain&type=A")
         ip=$(echo "$response" | grep -oE '"data":"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | cut -d'"' -f4)
         if [ -n "$ip" ]; then
             echo "$domain $ip" >> "$ip_file"
@@ -218,10 +225,10 @@ while true; do
     # ────────────────────────[ Ping Test ]────────────────────────────────────
     while true; do
         if [ -s "$ip_file" ]; then
-            read -p "Do you want to ping all resolved IPs? (y=Yes / 4=Menu / 5=Exit): " -n 1 -r
+            read -p "Do you want to ping all resolved IPs? (y=Yes / 5=Menu / 6=Exit): " -n 1 -r
             echo
-            [[ $REPLY == "4" ]] && continue 2
-            [[ $REPLY == "5" ]] && rm -f "$temp_domains" && exit 0
+            [[ $REPLY == "5" ]] && continue 2
+            [[ $REPLY == "6" ]] && rm -f "$temp_domains" && exit 0
             [[ ! $REPLY =~ ^[Yy]$ ]] && break
             echo -e "\nPinging IP addresses (2 packets each)..."
             print_header
